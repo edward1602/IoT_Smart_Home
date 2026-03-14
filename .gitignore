@@ -1,0 +1,9 @@
+# Ignore local environment files and local web config
+.env
+web.config.js
+node_modules/
+__pycache__/
+
+# PlatformIO build files
+.pio/
+build/

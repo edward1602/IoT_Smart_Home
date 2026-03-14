@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Dashboard - Micro:bit Control</title>
+    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #697B83 0%, #556268 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-top: 10px;
+            position: relative;
+        }
+
+        .status.connected {
+            background: #10b981;
+            color: white;
+        }
+
+        .status.disconnected {
+            background: #ef4444;
+            color: white;
+        }
+
+        .status.hidden {
+            display: none;
+        }
+
+        .close-btn {
+            background: rgba(255, 255, 255, 0.3);
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            color: white;
+            font-size: 14px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+            padding: 0;
+            margin-left: 5px;
+        }
+
+        .close-btn:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Temperature Warning */
+        .temp-warning {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 15px 20px;
+            border-radius: 10px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            animation: slideDown 0.3s ease;
+        }
+
+        .temp-warning.show {
+            display: flex;
+        }
+
+        .temp-warning.hot {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            color: white;
+            box-shadow: 0 5px 20px rgba(255, 107, 107, 0.4);
+        }
+
+        .temp-warning.cool {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            box-shadow: 0 5px 20px rgba(79, 172, 254, 0.4);
+        }
+
+        .temp-warning-icon {
+            font-size: 1.5em;
+        }
+
+        .temp-warning-text {
+            flex: 1;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+        }
+
+        .temp-warning.hiding {
+            animation: fadeOut 0.3s ease forwards;
+        }
+
+        /* Modal Dialog */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 450px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: modalSlideUp 0.3s ease;
+        }
+
+        @keyframes modalSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .modal-description {
+            color: #666;
+            margin-bottom: 25px;
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        .threshold-group {
+            margin-bottom: 20px;
+        }
+
+        .threshold-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .threshold-label .icon {
+            font-size: 1.5em;
+        }
+
+        .threshold-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .threshold-input {
+            flex: 1;
+            padding: 12px;
+            font-size: 1.1em;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .threshold-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .threshold-unit {
+            font-size: 1.2em;
+            color: #999;
+            font-weight: bold;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .modal-btn.confirm {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .modal-btn.confirm:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .modal-btn.cancel {
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .modal-btn.cancel:hover {
+            background: #e0e0e0;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s;
+            grid-column: span 2;
+        }
+
+        .card.wide {
+            grid-column: span 3;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
+        .card-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Toggle Switch */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 0;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 200px;
+            height: 80px;
+            background: #ef4444;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: background 0.3s;
+            box-shadow: inset 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .toggle-switch.on {
+            background: #10b981;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            width: 70px;
+            height: 70px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .toggle-switch.on .toggle-slider {
+            transform: translateX(120px);
+        }
+
+        .toggle-label {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.5em;
+            font-weight: bold;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .toggle-label.off {
+            right: 20px;
+        }
+
+        .toggle-label.on {
+            left: 20px;
+            opacity: 0;
+        }
+
+        .toggle-switch.on .toggle-label.off {
+            opacity: 0;
+        }
+
+        .toggle-switch.on .toggle-label.on {
+            opacity: 1;
+        }
+
+        /* Temperature Display */
+        .temp-display {
+            text-align: center;
+            padding: 30px;
+        }
+
+        .sensor-group {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-start;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .sensor-item {
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .temp-value {
+            font-size: 3em;
+            font-weight: bold;
+            color: #667eea;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .humi-value {
+            font-size: 3em;
+            font-weight: bold;
+            color: #10b981;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .temp-unit, .humi-unit {
+            font-size: 1.5em;
+            color: #999;
+        }
+
+        .temp-label, .humi-label {
+            font-size: 1em;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        /* Auto Mode Toggle */
+        .auto-mode-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 10px;
+        }
+
+        .auto-mode-label {
+            font-size: 0.9em;
+            font-weight: bold;
+            color: #666;
+        }
+
+        .auto-toggle {
+            position: relative;
+            width: 60px;
+            height: 30px;
+            background: #ccc;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .auto-toggle.active {
+            background: #667eea;
+        }
+
+        .auto-toggle-slider {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .auto-toggle.active .auto-toggle-slider {
+            transform: translateX(30px);
+        }
+
+        /* History */
+        .history {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f3f4f6;
+            border-radius: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 8px;
+            border-left: 3px solid #667eea;
+            margin-bottom: 8px;
+            background: white;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .timestamp {
+            color: #999;
+            font-size: 0.85em;
+        }
+
+        /* Chart Card */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            background: #1a1a1a;
+            border-radius: 10px;
+            padding: 15px 20px 25px 20px;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+
+            .card, .card.wide {
+                grid-column: span 1;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .temp-value {
+                font-size: 3em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1> Web IoT</h1>
+            <div class="status disconnected" id="status">
+                <span id="statusText">Đang kết nối...</span>
+            </div>
+        </div>
+
+        <!-- Temperature Warning Banner -->
+        <div class="temp-warning" id="tempWarning">
+            <span class="temp-warning-icon" id="warningIcon"></span>
+            <div class="temp-warning-text" id="warningText"></div>
+        </div>
+
+        <!-- Light Warning Banner for LED -->
+        <div class="temp-warning" id="lightWarning">
+            <span class="temp-warning-icon" id="lightWarningIcon"></span>
+            <div class="temp-warning-text" id="lightWarningText"></div>
+        </div>
+
+        <!-- Temperature Threshold Modal -->
+        <div class="modal-overlay" id="thresholdModal">
+            <div class="modal-content">
+                <div class="modal-title">⚙️ Cài Đặt Nhiệt Độ</div>
+                <div class="modal-description">
+                    Thiết lập nhiệt độ để quạt tự động bật/tắt
+                </div>
+                
+                <div class="threshold-group">
+                    <div class="threshold-label">
+                        <span class="icon">🔥</span>
+                        <span>Bật quạt khi nhiệt độ CAO</span>
+                    </div>
+                    <div class="threshold-input-group">
+                        <span>≥</span>
+                        <input type="number" class="threshold-input" id="tempHigh" value="30" min="25" max="45" step="1">
+                        <span class="threshold-unit">°C</span>
+                    </div>
+                </div>
+                
+                <div class="threshold-group">
+                    <div class="threshold-label">
+                        <span class="icon">❄️</span>
+                        <span>Tắt quạt khi nhiệt độ THẤP</span>
+                    </div>
+                    <div class="threshold-input-group">
+                        <span>≤</span>
+                        <input type="number" class="threshold-input" id="tempLow" value="28" min="20" max="40" step="1">
+                        <span class="threshold-unit">°C</span>
+                    </div>
+                </div>
+                
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="cancelThresholdConfig()">❌ Hủy</button>
+                    <button class="modal-btn confirm" onclick="confirmThresholdConfig()">✅ Xác Nhận</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <!-- LED Control Card -->
+            <div class="card">
+                <div class="card-title">💡 ĐÈN LED</div>
+                <div class="toggle-container">
+                    <div class="toggle-switch" id="ledToggle" onclick="toggleLED()">
+                        <div class="toggle-slider"></div>
+                        <span class="toggle-label on">ON</span>
+                        <span class="toggle-label off">OFF</span>
+                    </div>
+                </div>
+                <div class="auto-mode-container">
+                    <span class="auto-mode-label">AUTO MODE</span>
+                    <div class="auto-toggle" id="autoToggleLED" onclick="toggleAutoModeLED()">
+                        <div class="auto-toggle-slider"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fan Control Card -->
+            <div class="card">
+                <div class="card-title">🌀 QUẠT</div>
+                <div class="toggle-container">
+                    <div class="toggle-switch" id="fanToggle" onclick="toggleFan()">
+                        <div class="toggle-slider"></div>
+                        <span class="toggle-label on">ON</span>
+                        <span class="toggle-label off">OFF</span>
+                    </div>
+                </div>
+                <div class="auto-mode-container">
+                    <span class="auto-mode-label">AUTO MODE</span>
+                    <div class="auto-toggle" id="autoToggle" onclick="toggleAutoMode()">
+                        <div class="auto-toggle-slider"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Temperature & Humidity Card -->
+            <div class="card">
+                <div class="card-title">NHIỆT ĐỘ VÀ ĐỘ ẨM</div>
+                <div class="temp-display">
+                    <div class="sensor-group">
+                        <div class="sensor-item">
+                            <div>
+                                <span class="temp-value" id="tempValue">--</span>
+                                <span class="temp-unit">°C</span>
+                            </div>
+                            <div class="temp-label">Nhiệt độ</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div>
+                                <span class="humi-value" id="humiValue">--</span>
+                                <span class="humi-unit">%</span>
+                            </div>
+                            <div class="humi-label">Độ ẩm</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Card -->
+            <div class="card wide">
+                <div class="card-title">📆 NHẬT KÝ HOẠT ĐỘNG</div>
+                <div class="history" id="history">
+                    <div class="history-item">Đang chờ dữ liệu...</div>
+                </div>
+            </div>
+
+            <!-- Temperature Chart Card -->
+            <div class="card wide">
+                <div class="card-title">📈 NHIỆT ĐỘ</div>
+                <div class="chart-container">
+                    <canvas id="tempChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // MQTT Client
+        let client;
+        let ledState = 0;
+        let fanState = 5; // 4=ON, 5=OFF
+        let autoMode = false; // Chế độ tự động cho quạt
+        let autoModeLED = false; // Chế độ tự động cho LED
+        let history = [];
+        
+        // Temperature chart data
+        let tempData = [];
+        let tempLabels = [];
+        let tempChart;
+        const maxDataPoints = 20;
+
+        // Temperature warning timeout
+        let warningTimeout = null;
+        let warningTimeoutLight = null;
+
+        // Temperature thresholds for AUTO MODE
+        let tempThresholdHigh = 30; // Bật quạt khi ≥ 30°C
+        let tempThresholdLow = 28;  // Tắt quạt khi ≤ 28°C
+
+        // Light thresholds for AUTO MODE LED (cố định)
+        const lightThresholdHigh = 100; // Tắt LED khi ≥ 100 lux
+        const lightThresholdLow = 60;   // Bật LED khi ≤ 60 lux
+
+        // Status element
+        const statusEl = document.getElementById("status");
+
+        // Initialize temperature chart
+        function initChart() {
+            const ctx = document.getElementById('tempChart').getContext('2d');
+            tempChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: tempLabels,
+                    datasets: [{
+                        label: 'bbc-temp',
+                        data: tempData,
+                        borderColor: '#7FFF00',
+                        backgroundColor: 'rgba(127, 255, 0, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                        pointHoverBackgroundColor: '#7FFF00',
+                        pointHoverBorderColor: '#fff',
+                        pointHoverBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: {
+                            top: 10,
+                            bottom: 10,
+                            left: 5,
+                            right: 5
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#7FFF00',
+                            bodyColor: '#fff',
+                            borderColor: '#7FFF00',
+                            borderWidth: 1
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: 14,
+                            max: 40,
+                            ticks: {
+                                color: '#999',
+                                font: {
+                                    size: 12
+                                },
+                                stepSize: 2
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)',
+                                drawBorder: false
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#999',
+                                font: {
+                                    size: 10
+                                },
+                                maxRotation: 45,
+                                minRotation: 45
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)',
+                                drawBorder: false
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 750
+                    }
+                }
+            });
+        }
+        
+        // Add temperature data point to chart
+        function addTempToChart(temperature) {
+            const now = new Date();
+            const timeLabel = now.toLocaleTimeString('vi-VN', { 
+                hour: '2-digit', 
+                minute: '2-digit'
+            });
+            
+            tempData.push(parseFloat(temperature));
+            tempLabels.push(timeLabel);
+            
+            if (tempData.length > maxDataPoints) {
+                tempData.shift();
+                tempLabels.shift();
+            }
+            
+            if (tempChart) {
+                tempChart.update();
+            }
+        }
+        
+        // Initialize chart when page loads
+        window.addEventListener('load', function() {
+            initChart();
+            // Đảm bảo UI ở chế độ thủ công ban đầu
+            initAutoMode();
+        });
+        
+        // Khởi tạo chế độ AUTO MODE (mặc định: tắt)
+        function initAutoMode() {
+            const autoToggle = document.getElementById("autoToggle");
+            const fanToggle = document.getElementById("fanToggle");
+            const autoToggleLED = document.getElementById("autoToggleLED");
+            const ledToggle = document.getElementById("ledToggle");
+            
+            // Đảm bảo AUTO MODE tắt
+            autoMode = false;
+            autoToggle.classList.remove("active");
+            fanToggle.style.opacity = "1";
+            fanToggle.style.cursor = "pointer";
+            
+            // Đảm bảo AUTO MODE LED tắt
+            autoModeLED = false;
+            autoToggleLED.classList.remove("active");
+            ledToggle.style.opacity = "1";
+            ledToggle.style.cursor = "pointer";
+        }
+        
+        // Fetch current values from Adafruit IO
+        async function fetchCurrentValues() {
+            // Credentials should NOT be hardcoded in this file.
+            // Create a local `web.config.js` (ignored by git) that sets window.AIO_CONFIG = { username: '...', key: '...' }
+            const username = (window.AIO_CONFIG && window.AIO_CONFIG.username) ? window.AIO_CONFIG.username : "REPLACE_WITH_USERNAME";
+                const aioKey = (window.AIO_CONFIG && window.AIO_CONFIG.key) ? window.AIO_CONFIG.key : null;
+                const baseUrl = `https://io.adafruit.com/api/v2/${username}/feeds`;
+            
+            try {
+                // Fetch LED state
+                const ledResponse = await fetch(`${baseUrl}/bbc-led/data/last`, {
+                    headers: { 'X-AIO-Key': aioKey }
+                });
+                if (ledResponse.ok) {
+                    const ledData = await ledResponse.json();
+                    ledState = parseInt(ledData.value);
+                    updateLEDUI(ledState);
+                }
+                
+                // Fetch Fan state
+                const fanResponse = await fetch(`${baseUrl}/bbc-fan/data/last`, {
+                    headers: { 'X-AIO-Key': aioKey }
+                });
+                if (fanResponse.ok) {
+                    const fanData = await fanResponse.json();
+                    fanState = parseInt(fanData.value);
+                    updateFanUI(fanState);
+                }
+                
+                // Fetch Auto Mode Fan state
+                const autoResponse = await fetch(`${baseUrl}/bbc-auto-mode-fan/data/last`, {
+                    headers: { 'X-AIO-Key': aioKey }
+                });
+                if (autoResponse.ok) {
+                    const autoData = await autoResponse.json();
+                    const autoValue = autoData.value;
+                    // Parse AUTO MODE: "6" (bật) hoặc "7" (tắt)
+                    if (autoValue === "6") {
+                        autoMode = true;
+                    } else {
+                        autoMode = false;
+                    }
+                    updateAutoModeUI();
+                }
+                
+                // Fetch Auto Mode LED state
+                const autoLEDResponse = await fetch(`${baseUrl}/bbc-auto-mode-led/data/last`, {
+                    headers: { 'X-AIO-Key': aioKey }
+                });
+                if (autoLEDResponse.ok) {
+                    const autoLEDData = await autoLEDResponse.json();
+                    const autoLEDValue = autoLEDData.value;
+                    // Parse AUTO MODE LED: "2" (bật) hoặc "3" (tắt)
+                    if (autoLEDValue === "2") {
+                        autoModeLED = true;
+                    } else {
+                        autoModeLED = false;
+                    }
+                    updateAutoModeLEDUI();
+                }
+                
+                // Fetch Temperature
+                const tempResponse = await fetch(`${baseUrl}/bbc-temp/data/last`, {
+                    headers: { 'X-AIO-Key': aioKey }
+                });
+                if (tempResponse.ok) {
+                    const tempData = await tempResponse.json();
+                    const temp = parseFloat(tempData.value);
+                    document.getElementById("tempValue").innerText = tempData.value;
+                    addTempToChart(tempData.value);
+                    // Hiển thị cảnh báo nếu đang ở AUTO MODE
+                    if (autoMode) {
+                        showTemperatureWarning(temp);
+                    }
+                }
+                
+                // Fetch Humidity
+                const humiResponse = await fetch(`${baseUrl}/bbc-humi/data/last`, {
+                    headers: { 'X-AIO-Key': aioKey }
+                });
+                if (humiResponse.ok) {
+                    const humiData = await humiResponse.json();
+                    document.getElementById("humiValue").innerText = humiData.value;
+                }
+                
+                addHistory("ĐÃ ĐỒNG BỘ TRẠNG THÁI HIỆN TẠI");
+            } catch (error) {
+                console.error("Error fetching current values:", error);
+            }
+        }
+
+        // Connect to Adafruit IO
+        document.getElementById("statusText").innerText = "Đang kết nối...";
+        
+        if (aioKey) {
+        client = mqtt.connect("wss://io.adafruit.com:443", {
+            username: username,
+            password: aioKey,
+            reconnectPeriod: 1000
+        });
+
+        client.on("connect", function () {
+            statusEl.className = "status connected";
+            document.getElementById("statusText").innerText = "✅ Kết nối thành công";
+            
+            // Thêm nút đóng
+            if (!document.getElementById("closeStatusBtn")) {
+                const closeBtn = document.createElement("button");
+                closeBtn.id = "closeStatusBtn";
+                closeBtn.className = "close-btn";
+                closeBtn.innerHTML = "×";
+                closeBtn.onclick = function() {
+                    statusEl.classList.add("hidden");
+                };
+                statusEl.appendChild(closeBtn);
+            }
+            
+            client.subscribe("khanhdoan1602/feeds/bbc-led");
+            client.subscribe("khanhdoan1602/feeds/bbc-auto-mode-led");
+            client.subscribe("khanhdoan1602/feeds/bbc-fan");
+            client.subscribe("khanhdoan1602/feeds/bbc-temp");
+            client.subscribe("khanhdoan1602/feeds/bbc-humi");
+            client.subscribe("khanhdoan1602/feeds/bbc-light");
+            client.subscribe("khanhdoan1602/feeds/bbc-auto-mode-fan");
+            client.subscribe("khanhdoan1602/feeds/bbc-temp-high");
+            client.subscribe("khanhdoan1602/feeds/bbc-temp-low");
+            
+            addHistory("ĐÃ KẾT NỐI ĐẾN ADAFRUIT IO");
+            
+            // Tắt AUTO MODE khi bắt đầu kết nối
+            autoMode = false;
+            client.publish("khanhdoan1602/feeds/bbc-auto-mode-fan", "7");
+            autoModeLED = false;
+            client.publish("khanhdoan1602/feeds/bbc-auto-mode-led", "3");
+            updateAutoModeUI();
+            updateAutoModeLEDUI();
+            
+            // Lấy giá trị hiện tại từ Adafruit IO (trừ auto-mode)
+            fetchCurrentValues();
+        });
+        } else {
+            statusEl.className = "status disconnected";
+            document.getElementById("statusText").innerText = "🔒 API key missing — add web.config.js locally (ignored by git)";
+            addHistory("API key missing in web UI; create web.config.js with your credentials (not committed)");
+        }
+
+        client.on("error", function (error) {
+            document.getElementById("statusText").innerText = "❌ Lỗi kết nối";
+            statusEl.className = "status disconnected";
+            // Xóa nút close nếu có
+            const closeBtn = document.getElementById("closeStatusBtn");
+            if (closeBtn) {
+                closeBtn.remove();
+            }
+            console.error("MQTT Error:", error);
+        });
+
+        client.on("message", function (topic, message) {
+            const value = message.toString();
+            
+            // ⚠️ CHECK STRING DÀI TRƯỚC (bbc-auto-mode-*) để tránh match nhầm với string ngắn (bbc-led, bbc-fan)
+            if (topic.includes("bbc-auto-mode-led")) {
+                // Parse AUTO MODE LED: "2" (bật) hoặc "3" (tắt)
+                if (value === "2") {
+                    autoModeLED = true;
+                    addHistory(`AUTO MODE LED: BẬT`);
+                } else {
+                    autoModeLED = false;
+                    addHistory(`AUTO MODE LED: TẮT`);
+                }
+                updateAutoModeLEDUI();
+            }
+            else if (topic.includes("bbc-auto-mode-fan")) {
+                // Parse AUTO MODE: "6" (bật) hoặc "7" (tắt)
+                if (value === "6") {
+                    autoMode = true;
+                    addHistory(`AUTO MODE QUẠT: BẬT`);
+                } else {
+                    autoMode = false;
+                    addHistory(`AUTO MODE QUẠT: TẮT`);
+                }
+                updateAutoModeUI();
+            }
+            else if (topic.includes("bbc-led")) {
+                ledState = parseInt(value);
+                updateLEDUI(ledState);
+                addHistory(`LED: ${ledState == 1 ? "BẬT" : "TẮT"}`);
+            } 
+            else if (topic.includes("bbc-fan")) {
+                fanState = parseInt(value);
+                updateFanUI(fanState);
+                addHistory(`Fan: ${fanState == 4 ? "BẬT" : "TẮT"}`);
+            }
+            else if (topic.includes("bbc-temp-high")) {
+                tempThresholdHigh = parseInt(value);
+                console.log("Updated temp HIGH threshold:", tempThresholdHigh);
+            }
+            else if (topic.includes("bbc-temp-low")) {
+                tempThresholdLow = parseInt(value);
+                console.log("Updated temp LOW threshold:", tempThresholdLow);
+            }
+            else if (topic.includes("bbc-temp")) {
+                const temp = parseFloat(value);
+                document.getElementById("tempValue").innerText = value;
+                addTempToChart(value);
+                addHistory(`Nhiệt độ: ${value}°C`);
+                
+                // Hiển thị cảnh báo nhiệt độ nếu ở chế độ AUTO
+                if (autoMode) {
+                    showTemperatureWarning(temp);
+                }
+            }
+            else if (topic.includes("bbc-humi")) {
+                const humi = parseFloat(value);
+                document.getElementById("humiValue").innerText = value;
+                addHistory(`Độ ẩm: ${value}%`);
+            }
+            else if (topic.includes("bbc-light")) {
+                const light = parseFloat(value);
+                addHistory(`Ánh sáng: ${value} lux`);
+                
+                // Hiển thị cảnh báo ánh sáng nếu ở chế độ AUTO
+                if (autoModeLED) {
+                    showLightWarning(light);
+                }
+            }
+        });
+
+        // Toggle LED
+        function toggleLED() {
+            if (autoModeLED) {
+                addHistory("⚠️ LED đang ở chế độ AUTO - Vui lòng tắt AUTO MODE để điều khiển thủ công");
+                return;
+            }
+            ledState = ledState == 1 ? 0 : 1;
+            client.publish("khanhdoan1602/feeds/bbc-led", ledState.toString());
+            updateLEDUI(ledState);
+        }
+
+        // Toggle Fan
+        function toggleFan() {
+            if (autoMode) {
+                addHistory("⚠️ Quạt đang ở chế độ AUTO - Vui lòng tắt AUTO MODE để điều khiển thủ công");
+                return;
+            }
+            fanState = fanState == 5 ? 4 : 5;
+            client.publish("khanhdoan1602/feeds/bbc-fan", fanState.toString());
+            updateFanUI(fanState);
+        }
+
+        // Toggle Auto Mode
+        function toggleAutoMode() {
+            if (!autoMode) {
+                // Đang tắt, chuẩn bị bật AUTO MODE -> Hiển thị modal cài đặt
+                showThresholdConfigModal();
+            } else {
+                // Đang bật, tắt AUTO MODE
+                autoMode = false;
+                client.publish("khanhdoan1602/feeds/bbc-auto-mode-fan", "7");
+                updateAutoModeUI();
+            }
+        }
+
+        // Show threshold configuration modal
+        function showThresholdConfigModal() {
+            // Đặt giá trị hiện tại vào input
+            document.getElementById("tempHigh").value = tempThresholdHigh;
+            document.getElementById("tempLow").value = tempThresholdLow;
+            
+            // Hiển thị modal
+            document.getElementById("thresholdModal").classList.add("show");
+        }
+
+        // Cancel threshold configuration
+        function cancelThresholdConfig() {
+            // Ẩn modal, không bật AUTO MODE
+            document.getElementById("thresholdModal").classList.remove("show");
+        }
+
+        // Confirm threshold configuration
+        function confirmThresholdConfig() {
+            // Lấy giá trị từ input (cho phép số thập phân)
+            const high = parseFloat(document.getElementById("tempHigh").value);
+            const low = parseFloat(document.getElementById("tempLow").value);
+            
+            // Kiểm tra hợp lệ
+            if (low >= high) {
+                alert("⚠️ Nhiệt độ TẮT phải NHỏ HƠN nhiệt độ BẬT!");
+                return;
+            }
+            
+            // Lưu giá trị
+            tempThresholdHigh = high;
+            tempThresholdLow = low;
+            
+            // Ẩn modal
+            document.getElementById("thresholdModal").classList.remove("show");
+            
+            // Lưu giá trị
+            tempThresholdHigh = high;
+            tempThresholdLow = low;
+            autoMode = true;
+            
+            // GỬI NGƯỠNG TRƯỚC, AUTO MODE SAU (để Python nhận đúng ngưỡng khi bật AUTO)
+            client.publish("khanhdoan1602/feeds/bbc-temp-high", tempThresholdHigh.toString());
+            client.publish("khanhdoan1602/feeds/bbc-temp-low", tempThresholdLow.toString());
+            
+            // Đợi 100ms để đảm bảo ngưỡng được gửi trước
+            setTimeout(() => {
+                client.publish("khanhdoan1602/feeds/bbc-auto-mode-fan", "6");
+            }, 100);
+            
+            updateAutoModeUI();
+            
+            addHistory(`AUTO MODE: Bật quạt ≥${tempThresholdHigh}°C, Tắt quạt ≤${tempThresholdLow}°C`);
+        }
+
+        // Update Auto Mode UI
+        function updateAutoModeUI() {
+            const autoToggle = document.getElementById("autoToggle");
+            const fanToggle = document.getElementById("fanToggle");
+            const tempWarning = document.getElementById("tempWarning");
+            
+            if (autoMode) {
+                autoToggle.classList.add("active");
+                fanToggle.style.opacity = "0.6";
+                fanToggle.style.cursor = "not-allowed";
+                
+                // Kiểm tra nhiệt độ ngay khi bật AUTO MODE
+                const currentTemp = parseFloat(document.getElementById("tempValue").innerText);
+                if (!isNaN(currentTemp)) {
+                    showTemperatureWarning(currentTemp);
+                }
+            } else {
+                autoToggle.classList.remove("active");
+                fanToggle.style.opacity = "1";
+                fanToggle.style.cursor = "pointer";
+                // Ẩn cảnh báo và clear timeout khi tắt AUTO MODE
+                tempWarning.classList.remove("show");
+                if (warningTimeout) {
+                    clearTimeout(warningTimeout);
+                    warningTimeout = null;
+                }
+            }
+        }
+
+        // Toggle Auto Mode LED
+        function toggleAutoModeLED() {
+            if (!autoModeLED) {
+                // Đang tắt, bật AUTO MODE LED ngay (không cần modal, dùng ngưỡng mặc định)
+                autoModeLED = true;
+                client.publish("khanhdoan1602/feeds/bbc-auto-mode-led", "2");
+                updateAutoModeLEDUI();
+                addHistory(`AUTO MODE LED: BẬT (≤${lightThresholdLow} lux bật LED, ≥${lightThresholdHigh} lux tắt LED)`);
+                
+                // Kiểm tra ánh sáng hiện tại và hiển thị cảnh báo nếu cần
+                const historyItems = document.getElementById("history").getElementsByClassName("history-item");
+                for (let item of historyItems) {
+                    const text = item.innerText;
+                    const match = text.match(/Ánh sáng: ([\d.]+) lux/);
+                    if (match) {
+                        const currentLight = parseFloat(match[1]);
+                        showLightWarning(currentLight);
+                        break;
+                    }
+                }
+            } else {
+                // Đang bật, tắt AUTO MODE LED
+                autoModeLED = false;
+                client.publish("khanhdoan1602/feeds/bbc-auto-mode-led", "3");
+                updateAutoModeLEDUI();
+            }
+        }
+
+        // Update Auto Mode LED UI
+        function updateAutoModeLEDUI() {
+            const autoToggleLED = document.getElementById("autoToggleLED");
+            const ledToggle = document.getElementById("ledToggle");
+            const lightWarning = document.getElementById("lightWarning");
+            
+            if (autoModeLED) {
+                autoToggleLED.classList.add("active");
+                ledToggle.style.opacity = "0.6";
+                ledToggle.style.cursor = "not-allowed";
+            } else {
+                autoToggleLED.classList.remove("active");
+                ledToggle.style.opacity = "1";
+                ledToggle.style.cursor = "pointer";
+                // Ẩn cảnh báo và clear timeout khi tắt AUTO MODE
+                lightWarning.classList.remove("show");
+                if (warningTimeoutLight) {
+                    clearTimeout(warningTimeoutLight);
+                    warningTimeoutLight = null;
+                }
+            }
+        }
+
+        // Show light warning for LED
+        function showLightWarning(light) {
+            const warning = document.getElementById("lightWarning");
+            const icon = document.getElementById("lightWarningIcon");
+            const text = document.getElementById("lightWarningText");
+            
+            // Xóa timeout cũ nếu có
+            if (warningTimeoutLight) {
+                clearTimeout(warningTimeoutLight);
+            }
+            
+            // Xóa class hiding nếu có
+            warning.classList.remove("hiding");
+            
+            // Kiểm tra trạng thái LED
+            const isLEDOff = ledState == 0;
+            const isLEDOn = ledState == 1;
+            
+            // 1. LED TẮT + Ánh sáng <= 60 lux → CẦN BẬT
+            if (isLEDOff && light <= lightThresholdLow) {
+                warning.className = "temp-warning show cool";
+                icon.innerText = "💡";
+                text.innerHTML = `<strong>⚠️ ÁNH SÁNG YẾU!</strong><br>Ánh sáng: ${light} lux (≤ ${lightThresholdLow} lux) - Bật LED</strong>`;
+            }
+            // 2. LED BẬT + Ánh sáng >= 100 lux → CẦN TẮT
+            else if (isLEDOn && light >= lightThresholdHigh) {
+                warning.className = "temp-warning show hot";
+                icon.innerText = "☀️";
+                text.innerHTML = `<strong>✅ ÁNH SÁNG ĐỦ!</strong><br>Ánh sáng: ${light} lux (≥ ${lightThresholdHigh} lux) - Tắt LED</strong>`;
+            }
+            // Các trường hợp khác: KHÔNG hiển thị (LED đã đúng trạng thái)
+            else {
+                warning.classList.remove("show");
+                return;
+            }
+            
+            // Tự động ẩn sau 5 giây với animation
+            warningTimeoutLight = setTimeout(() => {
+                warning.classList.add("hiding");
+                setTimeout(() => {
+                    warning.classList.remove("show", "hiding");
+                }, 300); // Đợi animation fadeOut kết thúc
+            }, 5000);
+        }
+
+        // Show temperature warning
+        function showTemperatureWarning(temperature) {
+            const warning = document.getElementById("tempWarning");
+            const icon = document.getElementById("warningIcon");
+            const text = document.getElementById("warningText");
+            
+            // Xóa timeout cũ nếu có
+            if (warningTimeout) {
+                clearTimeout(warningTimeout);
+            }
+            
+            // Xóa class hiding nếu có
+            warning.classList.remove("hiding");
+            
+            // Kiểm tra trạng thái quạt
+            const isFanOff = fanState == 5;
+            const isFanOn = fanState == 4;
+            
+            // Sử dụng ngưỡng nhiệt độ tùy chỉnh
+            // 1. Quạt TẮT + Nhiệt độ >= tempThresholdHigh → CẦN BẬT
+            if (isFanOff && temperature >= tempThresholdHigh) {
+                warning.className = "temp-warning show hot";
+                icon.innerText = "🔥";
+                text.innerHTML = `<strong>⚠️ CẢNH BÁO NHIỆT ĐỘ CAO!</strong><br>Nhiệt độ: ${temperature}°C (≥ ${tempThresholdHigh}°C) - Bật Quạt</strong>`;
+            }
+            // 2. Quạt BẬT + Nhiệt độ <= tempThresholdLow → CẦN TẮT
+            else if (isFanOn && temperature <= tempThresholdLow) {
+                warning.className = "temp-warning show cool";
+                icon.innerText = "❄️";
+                text.innerHTML = `<strong>✅ NHIỆT ĐỘ ỔN ĐỊNH</strong><br>Nhiệt độ: ${temperature}°C (≤ ${tempThresholdLow}°C) - Tắt Quạt</strong>`;
+            }
+            // Các trường hợp khác: KHÔNG hiển thị (quạt đã đúng trạng thái)
+            else {
+                warning.classList.remove("show");
+                return;
+            }
+            
+            // Tự động ẩn sau 5 giây với animation
+            warningTimeout = setTimeout(() => {
+                warning.classList.add("hiding");
+                setTimeout(() => {
+                    warning.classList.remove("show", "hiding");
+                }, 300); // Đợi animation fadeOut kết thúc
+            }, 5000);
+        }
+
+        // Update LED UI
+        function updateLEDUI(state) {
+            const toggle = document.getElementById("ledToggle");
+            if (state == 1) {
+                toggle.classList.add("on");
+            } else {
+                toggle.classList.remove("on");
+            }
+        }
+
+        // Update Fan UI
+        function updateFanUI(state) {
+            const toggle = document.getElementById("fanToggle");
+            if (state == 4) {
+                toggle.classList.add("on");
+            } else {
+                toggle.classList.remove("on");
+            }
+        }
+
+        // Add history log
+        function addHistory(message) {
+            const now = new Date().toLocaleTimeString('vi-VN');
+            history.unshift({ time: now, message: message });
+            
+            if (history.length > 20) {
+                history.pop();
+            }
+            
+            const historyEl = document.getElementById("history");
+            historyEl.innerHTML = history.map(item => 
+                `<div class="history-item">
+                    <strong>${item.message}</strong>
+                    <div class="timestamp">${item.time}</div>
+                </div>`
+            ).join('');
+        }
+    </script>
+</body>
+</html>
