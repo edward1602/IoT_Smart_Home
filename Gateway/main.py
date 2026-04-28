@@ -2,6 +2,8 @@ import random
 import time
 import sys
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import serial.tools.list_ports
 from Adafruit_IO import MQTTClient
 
