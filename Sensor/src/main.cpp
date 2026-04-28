@@ -25,6 +25,7 @@ DHT dht(DHT_PIN, DHT11);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 SemaphoreHandle_t dataMutex;
+SemaphoreHandle_t serialMutex;
 
 String serialBuffer = "";
 
@@ -45,12 +46,12 @@ void handleCommand(String cmd){
     else if(cmd == "3"){     // tắt buzzer
         digitalWrite(BUZZER, LOW);
     }
-    else if(cmd == "4"){     // bật quạt
-        digitalWrite(FAN, HIGH);
+    else if(cmd == "4"){     // tắt quạt
+        digitalWrite(FAN, LOW);
     }
 
-    else if(cmd == "5"){     // tắt quạt
-        digitalWrite(FAN, LOW);
+    else if(cmd == "5"){     // bật quạt
+        digitalWrite(FAN, HIGH);
     }
 
 }
@@ -76,7 +77,6 @@ void Task_Read_DTH_Sensor(void *pvParametters){
 void Task_Read_LDR_Sensor(void *pvParametters){
   while(1){
   adclightLevel = analogRead(LDR_PIN);
-  lightLevel = map(adclightLevel, 4095, 0, 0, 100);
   if (xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
     lightLevel = map(adclightLevel, 4095, 0, 0, 100);
     xSemaphoreGive(dataMutex);
@@ -141,24 +141,30 @@ void Task_Print_DTH11(void* pvParametters){
   float lastTemperature = NAN;
 
   while(1){
-    float localTemperature;
-    float localHumidity;
+    float localTemperature = NAN;
+    float localHumidity = NAN;
     if (xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
       localTemperature = temperature;
       localHumidity = humidity;
       xSemaphoreGive(dataMutex);
     }
 
-    if (localTemperature != lastTemperature) {
-      Serial.print("!1:TEMP:");
-      Serial.print(localTemperature);
-      Serial.println("#");
+    if (!isnan(localTemperature) && localTemperature != lastTemperature) {
+      if (xSemaphoreTake(serialMutex, portMAX_DELAY) == pdTRUE) {
+        Serial.print("!1:TEMP:");
+        Serial.print(localTemperature);
+        Serial.println("#");
+        xSemaphoreGive(serialMutex);
+      }
       lastTemperature = localTemperature;
     }
-    if (localHumidity != lastHumidity) {
-      Serial.print("!1:HUMI:");
-      Serial.print(localHumidity);
-      Serial.println("#");
+    if (!isnan(localHumidity) && localHumidity != lastHumidity) {
+      if (xSemaphoreTake(serialMutex, portMAX_DELAY) == pdTRUE) {
+        Serial.print("!1:HUMI:");
+        Serial.print(localHumidity);
+        Serial.println("#");
+        xSemaphoreGive(serialMutex);
+      }
       lastHumidity = localHumidity;
     }
     vTaskDelay(15000);
@@ -176,9 +182,12 @@ void Task_Print_Light(void* pvParametters){
     }
 
     if (localLightLevel != lastLightLevel) {
-      Serial.print("!1:LIGHT:");
-      Serial.print(localLightLevel);
-      Serial.println("#");
+      if (xSemaphoreTake(serialMutex, portMAX_DELAY) == pdTRUE) {
+        Serial.print("!1:LIGHT:");
+        Serial.print(localLightLevel);
+        Serial.println("#");
+        xSemaphoreGive(serialMutex);
+      }
       lastLightLevel = localLightLevel;
     }
     vTaskDelay(8000);
@@ -198,9 +207,12 @@ void Task_Print_Motion(void* pvParametters){
     }
 
     if (localMotion != lastMotion && (now - lastReportMs) >= 2000) {
-      Serial.print("!1:PIR:");
-      Serial.print(localMotion == HIGH ? "True" : "False");
-      Serial.println("#");
+      if (xSemaphoreTake(serialMutex, portMAX_DELAY) == pdTRUE) {
+        Serial.print("!1:PIR:");
+        Serial.print(localMotion == HIGH ? "True" : "False");
+        Serial.println("#");
+        xSemaphoreGive(serialMutex);
+      }
       lastMotion = localMotion;
       lastReportMs = now;
     }
@@ -226,6 +238,18 @@ void Task_Read_Serial_Command(void *pvParametters){
         }
     }
   vTaskDelay(100);
+  }
+}
+
+void Task_Alarm_On_Motion(void *pvParametters){
+  while(1){
+    int localMotion;
+    if (xSemaphoreTake(dataMutex, portMAX_DELAY) == pdTRUE) {
+      localMotion = motion;
+      xSemaphoreGive(dataMutex);
+    }
+    digitalWrite(BUZZER, localMotion == HIGH ? HIGH : LOW);
+    vTaskDelay(200);
   }
 }
 
@@ -256,6 +280,12 @@ void setup() {
     while(1);
   }
 
+  serialMutex = xSemaphoreCreateMutex();
+  if (serialMutex == NULL) {
+    Serial.println("Serial mutex khong khoi dong duoc");
+    while(1);
+  }
+
   xTaskCreate(Task_Read_DTH_Sensor, "DTH sensor", 2048, NULL, 2, NULL);
   xTaskCreate(Task_Read_LDR_Sensor, "LDR sensor", 2048, NULL, 2, NULL);
   xTaskCreate(Task_Read_PIR_Sensor, "PIR sensor", 2048, NULL, 2, NULL);
@@ -263,6 +293,7 @@ void setup() {
   xTaskCreate(Task_Print_Motion, "Serial Print Motion", 2048, NULL, 1, NULL);
   xTaskCreate(Task_Print_Light, "Serial Print Light", 2048, NULL, 1, NULL);
   xTaskCreate(Task_Read_Serial_Command, "Serial Read", 2048, NULL, 1, NULL);
+  //xTaskCreate(Task_Alarm_On_Motion, "Alarm On Motion", 2048, NULL, 1, NULL);
   xTaskCreate(Task_Display_OLED, "Dislay OLED", 2048, NULL, 3, NULL);
 }
 
